@@ -34,6 +34,8 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    - `DISCOVERY_ANAKIN_GENERATE_JSON` — optional, default `true`. When `true`, article scrapes pass `generateJson: true` to Anakin URL Scraper so each job can return `generatedJson` (structured extraction on Anakin). Groq prompts prefer compact `STRUCTURED_JSON` over full markdown to reduce tokens per minute (TPM). Set `false` for markdown-only scrapes (previous behavior, lower Anakin extraction cost/latency).
    - `DISCOVERY_PROFILE_SCRAPE_MAX` — optional, default `0`. Top-N Instagram profiles to enrich via URL Scraper. Off by default because Instagram blocks anonymous scrapers.
    - `DISCOVERY_GROQ_REQUIRED` — optional, default `true`. When `false`, the endpoint falls back to the legacy snippet-only mapper if Groq is missing or fails.
+   - `APIFY_API_TOKEN` — optional. Enables `GET /api/v1/enrichment/instagram/:username` using the Apify actor [`apify/instagram-profile-scraper`](https://apify.com/apify/instagram-profile-scraper). Without it, the frontend detail page still works but shows discovery-only data (503 from enrichment).
+   - `APIFY_RETURN_RAW` — optional. Set to `true` to include the raw Apify dataset item in enrichment responses (debug only).
 
 ## Run
 
@@ -68,6 +70,11 @@ This calls `GET /v1/holocron/catalog` and a few `GET /v1/holocron/search` querie
 | GET    | `/`                               | API info                                            |
 | GET    | `/health`                         | Health check                                        |
 | POST   | `/api/v1/discovery/instagram`     | Discover Instagram creators via Anakin Search API   |
+| GET    | `/api/v1/enrichment/instagram/:username` | Live profile via Apify (`APIFY_API_TOKEN` required) |
+
+### `GET /api/v1/enrichment/instagram/:username`
+
+Runs the Apify actor `apify/instagram-profile-scraper` for one username (no `@` prefix required). Returns `{ profile, source, actorId }` with normalized fields (`followersCount`, `profilePicUrl`, `biography`, etc.). Responds **503** with `APIFY_NOT_CONFIGURED` if `APIFY_API_TOKEN` is missing.
 
 ### `POST /api/v1/discovery/instagram`
 

@@ -41,7 +41,10 @@ app.get('/', (req, res) => {
   res.json({
     name: 'influenceos-backend',
     health: '/health',
-    endpoints: ['POST /api/v1/discovery/instagram'],
+    endpoints: [
+      'POST /api/v1/discovery/instagram',
+      'GET /api/v1/enrichment/instagram/:username',
+    ],
   });
 });
 
@@ -50,6 +53,8 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/v1/discovery', discoveryRouter);
+const enrichmentRouter = require('./routes/enrichment');
+app.use('/api/v1/enrichment', enrichmentRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

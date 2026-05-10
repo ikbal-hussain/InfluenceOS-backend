@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/ikbal-hussain/InfluenceOS-backend#readme",
   "dependencies": {
+    "apify-client": "^2.23.2",
     "axios": "^1.16.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
