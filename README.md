@@ -1,6 +1,8 @@
 # InfluenceOS-backend
 
-Node.js + Express API for InfluenceOS.
+InfluenceOS is an AI-powered influencer discovery platform that helps brands find the right micro-influencers for their campaigns. By analyzing creator profiles, engagement, niche, audience relevance, and web data, it generates smart match scores, campaign insights, and personalized outreach messages, making influencer marketing faster and more data-driven.
+
+This repository contains the Node.js + Express API that powers the InfluenceOS frontend.
 
 ## Setup
 
