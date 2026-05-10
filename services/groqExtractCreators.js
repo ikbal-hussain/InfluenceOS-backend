@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { logDiscovery } = require('./discoveryLog');
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = 'llama-3.1-8b-instant';
@@ -12,6 +13,11 @@ function getConfig() {
   const apiKey = process.env.GROQ_API_KEY;
   const model = process.env.GROQ_MODEL || DEFAULT_MODEL;
   return { apiKey, model };
+}
+
+/** Resolved Groq model id (for logs and API `stages`); no secrets. */
+function getGroqModelId() {
+  return process.env.GROQ_MODEL || DEFAULT_MODEL;
 }
 
 function truncate(text, max) {
@@ -170,6 +176,8 @@ function dedupeByHandle(creators) {
 
 async function extractCreators({ query, searchResults, scrapedArticles, limit }) {
   const { apiKey, model } = getConfig();
+  const resolvedModel = getGroqModelId();
+
   if (!apiKey) {
     const err = new Error('Groq API key is not configured');
     err.code = 'GROQ_KEY_MISSING';
@@ -177,7 +185,24 @@ async function extractCreators({ query, searchResults, scrapedArticles, limit })
   }
 
   const sources = buildSourceBlocks(searchResults, scrapedArticles);
-  if (!sources) return [];
+  if (!sources) {
+    logDiscovery('llm_skipped', {
+      llmProvider: 'groq',
+      llmModel: resolvedModel,
+      reason: 'no_sources',
+    });
+    return {
+      creators: [],
+      meta: { llmInvoked: false, llmProvider: 'groq', llmModel: resolvedModel, reason: 'no_sources' },
+    };
+  }
+
+  logDiscovery('llm_attempt', {
+    llmProvider: 'groq',
+    llmModel: resolvedModel,
+    sourcesChars: sources.length,
+    groqHost: 'api.groq.com',
+  });
 
   const messages = buildMessages({ query, sources, limit });
 
@@ -200,7 +225,16 @@ async function extractCreators({ query, searchResults, scrapedArticles, limit })
   );
 
   const content = response.data?.choices?.[0]?.message?.content || '';
-  return dedupeByHandle(parseGroqResponse(content));
+  const creators = dedupeByHandle(parseGroqResponse(content));
+  logDiscovery('llm_result', {
+    llmProvider: 'groq',
+    llmModel: resolvedModel,
+    creatorCount: creators.length,
+  });
+  return {
+    creators,
+    meta: { llmInvoked: true, llmProvider: 'groq', llmModel: resolvedModel },
+  };
 }
 
 module.exports = {
@@ -209,4 +243,5 @@ module.exports = {
   dedupeByHandle,
   buildSourceBlocks,
   structuredPayloadFromGeneratedJson,
+  getGroqModelId,
 };

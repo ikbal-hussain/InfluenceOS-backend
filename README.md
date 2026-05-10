@@ -91,6 +91,18 @@ Response:
 {
   "query": { "niche": "Fitness", "location": "Bangalore", "audienceType": "Gen Z snack brand", "limit": 10, "platform": "instagram" },
   "requestId": "anakin-request-id",
+  "stages": {
+    "searchMode": "auto",
+    "searchProvider": "anakin-search",
+    "search": 5,
+    "scrapedArticles": 3,
+    "anakinGenerateJson": true,
+    "groqCreators": 2,
+    "usedFallback": false,
+    "llmProvider": "groq",
+    "llmModel": "llama-3.1-8b-instant",
+    "llmStatus": "ok"
+  },
   "count": 2,
   "influencers": [
     {
@@ -120,7 +132,22 @@ The endpoint runs three stages internally:
 2. **Anakin URL Scraper** ([`services/anakinUrlScraper.js`](services/anakinUrlScraper.js)) — optional. Fetches markdown for the top `DISCOVERY_ARTICLE_SCRAPE_MAX` non-Instagram URLs. When **`DISCOVERY_ANAKIN_GENERATE_JSON=true`** (default), scrapes also request **`generateJson`** so Anakin returns **`generatedJson`** (hosted structured extraction). [`groqExtractCreators.js`](services/groqExtractCreators.js) then prefers **`JSON.stringify(generatedJson.data)`** under `STRUCTURED_JSON` in the Groq prompt instead of dumping full markdown — fewer input tokens and fewer Groq TPM spikes. If JSON is missing or failed, content falls back to truncated markdown as before.
 3. **Groq JSON extraction** ([`services/groqExtractCreators.js`](services/groqExtractCreators.js)) — bundles snippets + per-source content into one prompt and asks Groq (default **`llama-3.1-8b-instant`**) for a strict JSON list of creators (`handle`, `displayName`, `followerText`, `evidenceSnippet`, `sourceUrl`).
 
-The response includes `stages.searchProvider` (`anakin-search`, `serp-fallback`, or `serp`) and `stages.anakinGenerateJson` (whether article scrapes requested Anakin structured JSON). If Groq fails or is disabled, the pipeline falls back to the legacy snippet-only mapper so the dashboard never shows zero rows when search returned data. See [`docs/anakin-api-overview.md`](docs/anakin-api-overview.md) for the full Anakin product comparison.
+The response includes a `stages` object (see **Observability** below). If Groq fails or is disabled, the pipeline falls back to the legacy snippet-only mapper so the dashboard never shows zero rows when search returned data. See [`docs/anakin-api-overview.md`](docs/anakin-api-overview.md) for the full Anakin product comparison.
+
+## Observability
+
+Discovery runs emit structured server logs via [`services/discoveryLog.js`](services/discoveryLog.js): each line is `console.log('[discovery]', <event>, JSON.stringify(fields))`. Events include `search_complete` (search path and result count), `scrape_complete` (article scrape limits and counts), `llm_attempt` / `llm_skipped` / `llm_result` from Groq extraction (resolved model and approximate `sourcesChars` on attempt; never API keys or full prompts), and `pipeline_complete` (outcome and influencer count). Use these to see whether Anakin search vs SERP scrape ran and whether influencers came from Groq or the legacy mapper.
+
+The JSON response **`stages`** field is additive:
+
+| Field | Meaning |
+|--------|---------|
+| `searchMode` | Env `DISCOVERY_SEARCH_MODE`: `auto`, `api`, or `serp`. |
+| `searchProvider` | Actual path used: `anakin-search`, `serp`, or `serp-fallback`. |
+| `llmProvider` | `groq` when Groq was invoked (rows returned, empty JSON, or HTTP error); `none` when Groq was not called (e.g. no SOURCES built). |
+| `llmModel` | Resolved Groq model id when the LLM path applies; otherwise `null`. |
+| `llmStatus` | `ok`, `skipped`, or `error` (Groq attempted and failed). |
+| `usedFallback` | `true` when the snippet-only mapper was used for the returned list. |
 
 ### Manual smoke test
 

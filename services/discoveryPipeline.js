@@ -2,8 +2,9 @@ const crypto = require('crypto');
 const { searchInstagramCreators } = require('./anakinSearch');
 const { searchInstagramCreatorsViaScraper } = require('./anakinSerpSearch');
 const { scrapeArticles, isInstagramProfileUrl } = require('./anakinUrlScraper');
-const { extractCreators } = require('./groqExtractCreators');
+const { extractCreators, getGroqModelId } = require('./groqExtractCreators');
 const { mapAnakinResults, parseFollowerCount, sortByFollowersDesc } = require('./influencerMapper');
+const { logDiscovery } = require('./discoveryLog');
 
 function envInt(name, fallback) {
   const raw = process.env[name];
@@ -86,10 +87,12 @@ async function performSearch({ query, searchLimit }) {
 }
 
 async function runDiscoveryPipeline(query) {
+  const searchMode = searchModeFromEnv();
   const searchLimit = envInt('DISCOVERY_SEARCH_LIMIT', 5);
   const articleScrapeMax = envInt('DISCOVERY_ARTICLE_SCRAPE_MAX', 3);
   const groqRequired = envBool('DISCOVERY_GROQ_REQUIRED', true);
   const anakinGenerateJson = envBool('DISCOVERY_ANAKIN_GENERATE_JSON', true);
+  const resolvedGroqModel = getGroqModelId();
 
   let search;
   try {
@@ -97,6 +100,13 @@ async function runDiscoveryPipeline(query) {
   } catch (err) {
     throw tagStage(err, err.stage || 'search');
   }
+
+  logDiscovery('search_complete', {
+    searchMode,
+    searchProvider: search.searchProvider,
+    resultCount: search.rawResults?.length ?? 0,
+    serpUrl: search.serpUrl ? String(search.serpUrl).slice(0, 120) : undefined,
+  });
 
   const candidateUrls = (search.rawResults || [])
     .map((r) => r?.url)
@@ -115,17 +125,35 @@ async function runDiscoveryPipeline(query) {
     }
   }
 
+  logDiscovery('scrape_complete', {
+    anakin: 'url-scraper',
+    articleScrapeMax,
+    candidates: candidateUrls.length,
+    scrapedCount: scrapedArticles.length,
+    anakinGenerateJson,
+  });
+
   let groqCreators = [];
   let groqError = null;
+  let groqMeta = null;
   try {
-    groqCreators = await extractCreators({
+    const out = await extractCreators({
       query,
       searchResults: search.rawResults,
       scrapedArticles,
       limit: query.limit ?? 10,
     });
+    groqCreators = out.creators || [];
+    groqMeta = out.meta || null;
   } catch (err) {
     groqError = tagStage(err, 'groq');
+    logDiscovery('llm_result', {
+      llmProvider: 'groq',
+      llmModel: resolvedGroqModel,
+      llm_error: true,
+      status: err.response?.status ?? null,
+      code: err.code || null,
+    });
     if (err.code === 'GROQ_KEY_MISSING' && groqRequired) {
       throw err;
     }
@@ -136,22 +164,51 @@ async function runDiscoveryPipeline(query) {
     );
   }
 
+  function llmStagesForResponse() {
+    let llmProvider = 'none';
+    let llmStatus = 'skipped';
+    if (groqCreators.length > 0) {
+      llmProvider = 'groq';
+      llmStatus = 'ok';
+    } else if (groqError) {
+      llmProvider = 'groq';
+      llmStatus = 'error';
+    } else if (groqMeta?.reason === 'no_sources') {
+      llmProvider = 'none';
+      llmStatus = 'skipped';
+    } else if (groqMeta?.llmInvoked) {
+      llmProvider = 'groq';
+      llmStatus = 'ok';
+    }
+    const llmModel =
+      llmProvider === 'groq' ? groqMeta?.llmModel || resolvedGroqModel : null;
+    return { llmProvider, llmStatus, llmModel };
+  }
+
   if (groqCreators.length > 0) {
     const fallbackUrl = search.rawResults?.[0]?.url || null;
     const influencers = sortByFollowersDesc(
       groqCreators.map((c) => toInfluencerRow(c, fallbackUrl)),
     );
+    const llm = llmStagesForResponse();
+    logDiscovery('pipeline_complete', {
+      outcome: 'groq_rows',
+      influencerCount: influencers.length,
+      ...llm,
+    });
     return {
       influencers,
       requestId: search.requestId,
       prompt: search.prompt,
       stages: {
+        searchMode,
         searchProvider: search.searchProvider,
         search: search.rawResults?.length ?? 0,
         scrapedArticles: scrapedArticles.length,
         anakinGenerateJson,
         groqCreators: groqCreators.length,
         usedFallback: false,
+        ...llm,
       },
     };
   }
@@ -161,17 +218,25 @@ async function runDiscoveryPipeline(query) {
   }
 
   const fallbackInfluencers = mapAnakinResults(search.rawResults || []);
+  const llm = llmStagesForResponse();
+  logDiscovery('pipeline_complete', {
+    outcome: 'fallback_mapper',
+    influencerCount: fallbackInfluencers.length,
+    ...llm,
+  });
   return {
     influencers: fallbackInfluencers,
     requestId: search.requestId,
     prompt: search.prompt,
     stages: {
+      searchMode,
       searchProvider: search.searchProvider,
       search: search.rawResults?.length ?? 0,
       scrapedArticles: scrapedArticles.length,
       anakinGenerateJson,
       groqCreators: 0,
       usedFallback: true,
+      ...llm,
     },
   };
 }
