@@ -5,11 +5,32 @@ const cors = require('cors');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
+/** Comma-separated extra origins in CLIENT_ORIGIN are merged with these defaults */
+const DEFAULT_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://influenceos-app.netlify.app',
+];
+
+function allowedOriginsList() {
+  const raw = process.env.CLIENT_ORIGIN;
+  const fromEnv =
+    raw && raw.trim()
+      ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+  return [...new Set([...DEFAULT_ORIGINS, ...fromEnv])];
+}
+
+const allowedOrigins = allowedOriginsList();
 
 app.use(
   cors({
-    origin: CLIENT_ORIGIN,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      callback(null, false);
+    },
     credentials: true,
   }),
 );

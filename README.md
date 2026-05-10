@@ -17,7 +17,7 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    - **PowerShell:** `Copy-Item .env.example .env`
    - **macOS / Linux:** `cp .env.example .env`
 
-   Variables: `PORT` (default `3000`), `CLIENT_ORIGIN` (CORS; default Vite dev server `http://localhost:5173`).
+   Variables: `PORT` (default `3000`). **`CLIENT_ORIGIN`** — comma-separated allowed origins for CORS (e.g. `http://localhost:5173,https://influenceos-app.netlify.app`). If omitted, defaults include Vite dev URLs and `https://influenceos-app.netlify.app`.
 
 ## Run
 
