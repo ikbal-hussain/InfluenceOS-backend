@@ -1,9 +1,11 @@
 const axios = require('axios');
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_MODEL = 'llama-3.1-8b-instant';
 const MAX_TOTAL_CHARS = 24_000;
 const MAX_BLOCK_CHARS = 6_000;
+/** Prefer Anakin generatedJson.data stringified over raw markdown when present */
+const MAX_JSON_BLOCK_CHARS = 4_000;
 const HANDLE_REGEX = /^[A-Za-z0-9_.]{1,30}$/;
 
 function getConfig() {
@@ -18,9 +20,21 @@ function truncate(text, max) {
   return `${text.slice(0, max)}\n…[truncated]`;
 }
 
+/**
+ * Normalize Anakin URL-scraper `generatedJson` ({ status, data } per OSS docs).
+ */
+function structuredPayloadFromGeneratedJson(generatedJson) {
+  if (!generatedJson || typeof generatedJson !== 'object') return null;
+  if (generatedJson.status === 'failed') return null;
+  const data = generatedJson.data;
+  if (data != null && typeof data === 'object') return data;
+  if (generatedJson.status === 'success') return null;
+  return null;
+}
+
 function buildSourceBlocks(searchResults, scrapedArticles) {
   const scrapedByUrl = new Map(
-    (scrapedArticles || []).map((a) => [a.url, a.markdown || '']),
+    (scrapedArticles || []).map((a) => [a.url, a]),
   );
 
   const blocks = [];
@@ -31,13 +45,23 @@ function buildSourceBlocks(searchResults, scrapedArticles) {
     const url = r?.url || '';
     const title = r?.title || '';
     const snippet = r?.snippet || '';
-    const markdown = scrapedByUrl.get(url) || '';
+    const row = scrapedByUrl.get(url);
+    const markdown = row?.markdown || '';
+    const structured = structuredPayloadFromGeneratedJson(row?.generatedJson);
+
     const remaining = MAX_TOTAL_CHARS - used;
     const blockBudget = Math.min(MAX_BLOCK_CHARS, remaining);
 
-    const body = markdown
-      ? truncate(markdown, blockBudget - title.length - snippet.length - url.length - 80)
-      : snippet;
+    let body = '';
+    if (structured != null) {
+      const jsonStr = JSON.stringify(structured);
+      body = truncate(jsonStr, Math.min(blockBudget - 120, MAX_JSON_BLOCK_CHARS));
+      body = `STRUCTURED_JSON:\n${body}`;
+    } else if (markdown) {
+      body = truncate(markdown, blockBudget - title.length - snippet.length - url.length - 80);
+    } else {
+      body = snippet;
+    }
 
     const block = [
       `### SOURCE`,
@@ -59,7 +83,7 @@ function buildSourceBlocks(searchResults, scrapedArticles) {
 function buildMessages({ query, sources, limit }) {
   const system = [
     'You are an extraction assistant for an influencer-discovery tool.',
-    'Your job: read the SOURCES (article snippets and scraped page content) and return a JSON object',
+    'Your job: read the SOURCES (article snippets, optional STRUCTURED_JSON from Anakin, and markdown) and return a JSON object',
     'listing real Instagram creators that the SOURCES explicitly mention.',
     'You MUST follow these rules:',
     '1. Output valid JSON only, matching the schema below. No prose, no markdown.',
@@ -164,7 +188,7 @@ async function extractCreators({ query, searchResults, scrapedArticles, limit })
       messages,
       temperature: 0.1,
       response_format: { type: 'json_object' },
-      max_tokens: 1500,
+      max_tokens: 1200,
     },
     {
       headers: {
@@ -184,4 +208,5 @@ module.exports = {
   parseGroqResponse,
   dedupeByHandle,
   buildSourceBlocks,
+  structuredPayloadFromGeneratedJson,
 };

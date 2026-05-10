@@ -89,6 +89,7 @@ async function runDiscoveryPipeline(query) {
   const searchLimit = envInt('DISCOVERY_SEARCH_LIMIT', 5);
   const articleScrapeMax = envInt('DISCOVERY_ARTICLE_SCRAPE_MAX', 3);
   const groqRequired = envBool('DISCOVERY_GROQ_REQUIRED', true);
+  const anakinGenerateJson = envBool('DISCOVERY_ANAKIN_GENERATE_JSON', true);
 
   let search;
   try {
@@ -105,7 +106,10 @@ async function runDiscoveryPipeline(query) {
   let scrapedArticles = [];
   if (articleScrapeMax > 0 && candidateUrls.length > 0) {
     try {
-      scrapedArticles = await scrapeArticles(candidateUrls, { concurrency: 2 });
+      scrapedArticles = await scrapeArticles(candidateUrls, {
+        concurrency: 2,
+        generateJson: anakinGenerateJson,
+      });
     } catch (err) {
       console.warn('[discoveryPipeline] article scrape failed:', err.message);
     }
@@ -145,6 +149,7 @@ async function runDiscoveryPipeline(query) {
         searchProvider: search.searchProvider,
         search: search.rawResults?.length ?? 0,
         scrapedArticles: scrapedArticles.length,
+        anakinGenerateJson,
         groqCreators: groqCreators.length,
         usedFallback: false,
       },
@@ -164,6 +169,7 @@ async function runDiscoveryPipeline(query) {
       searchProvider: search.searchProvider,
       search: search.rawResults?.length ?? 0,
       scrapedArticles: scrapedArticles.length,
+      anakinGenerateJson,
       groqCreators: 0,
       usedFallback: true,
     },

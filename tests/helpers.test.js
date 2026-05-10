@@ -9,6 +9,7 @@ const {
 const {
   parseGroqResponse,
   dedupeByHandle,
+  buildSourceBlocks,
 } = require('../services/groqExtractCreators');
 const { isInstagramProfileUrl } = require('../services/anakinUrlScraper');
 const {
@@ -125,6 +126,33 @@ test('buildSerpUrl + buildSearchQuery produce a usable DDG HTML URL', () => {
   assert.match(q, /India/);
   const url = buildSerpUrl(q);
   assert.match(url, /^https:\/\/html\.duckduckgo\.com\/html\/\?q=/);
+});
+
+test('buildSourceBlocks prefers STRUCTURED_JSON from Anakin over huge markdown', () => {
+  const searchResults = [
+    {
+      url: 'https://example.com/article',
+      title: 'Top creators',
+      snippet: 'Short snippet',
+    },
+  ];
+  const longMarkdown = 'Z'.repeat(6000);
+  const scrapedArticles = [
+    {
+      url: 'https://example.com/article',
+      markdown: longMarkdown,
+      generatedJson: {
+        status: 'success',
+        data: {
+          mentions: [{ handle: 'creator_one', followers: '250k' }],
+        },
+      },
+    },
+  ];
+  const out = buildSourceBlocks(searchResults, scrapedArticles);
+  assert.match(out, /STRUCTURED_JSON/);
+  assert.match(out, /creator_one/);
+  assert.ok(!out.includes('ZZZZZZ'));
 });
 
 test('isInstagramProfileUrl recognises profile pages but not posts/reels', () => {

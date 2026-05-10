@@ -24,13 +24,14 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    - `ANAKIN_API_KEY` — required for `/api/v1/discovery/*` endpoints. Get one from the [Anakin dashboard](https://anakin.io/dashboard); keys start with `ak-`.
    - `ANAKIN_API_BASE_URL` — optional, defaults to `https://api.anakin.io/v1`.
    - `GROQ_API_KEY` — required for the discovery pipeline's JSON extraction stage. Get one from the [Groq console](https://console.groq.com/).
-   - `GROQ_MODEL` — optional, defaults to `llama-3.3-70b-versatile`. Any Groq chat model that supports `response_format=json_object`.
+   - `GROQ_MODEL` — optional, defaults to `llama-3.1-8b-instant` (smaller / cheaper TPM vs 70B). Override with e.g. `llama-3.3-70b-versatile` if extraction quality drops. Any Groq chat model that supports `response_format=json_object`.
    - `DISCOVERY_SEARCH_MODE` — optional, default `auto`. Selects the search backend:
      - `auto` — try Anakin `/v1/search` first, fall back to scraping a DuckDuckGo HTML SERP via Anakin URL Scraper if Anakin's search returns 0 results or errors.
      - `api` — only use Anakin `/v1/search`.
      - `serp` — skip `/v1/search` entirely and always scrape DuckDuckGo via Anakin URL Scraper. Useful when `/v1/search` is degraded; pipeline stays 100% Anakin-powered.
    - `DISCOVERY_SEARCH_LIMIT` — optional, default `5`. Anakin Search results fetched per query (~3 credits each).
    - `DISCOVERY_ARTICLE_SCRAPE_MAX` — optional, default `3`. Article URLs scraped with Anakin URL Scraper (~1 credit each). Set to `0` to skip and feed Groq only snippets.
+   - `DISCOVERY_ANAKIN_GENERATE_JSON` — optional, default `true`. When `true`, article scrapes pass `generateJson: true` to Anakin URL Scraper so each job can return `generatedJson` (structured extraction on Anakin). Groq prompts prefer compact `STRUCTURED_JSON` over full markdown to reduce tokens per minute (TPM). Set `false` for markdown-only scrapes (previous behavior, lower Anakin extraction cost/latency).
    - `DISCOVERY_PROFILE_SCRAPE_MAX` — optional, default `0`. Top-N Instagram profiles to enrich via URL Scraper. Off by default because Instagram blocks anonymous scrapers.
    - `DISCOVERY_GROQ_REQUIRED` — optional, default `true`. When `false`, the endpoint falls back to the legacy snippet-only mapper if Groq is missing or fails.
 
@@ -116,10 +117,10 @@ The endpoint runs three stages internally:
 1. **Search** — finds article URLs about creators in the niche. Two backends, both Anakin:
    - **Primary:** Anakin Search ([`services/anakinSearch.js`](services/anakinSearch.js)) — `POST /v1/search`.
    - **Fallback:** Anakin URL Scraper used as a SERP scraper ([`services/anakinSerpSearch.js`](services/anakinSerpSearch.js)) — submits a DuckDuckGo HTML SERP URL to `POST /v1/url-scraper`, then parses the returned markdown into `{title, url, snippet}` rows. Triggered automatically when `/v1/search` errors or returns 0 results (or always, when `DISCOVERY_SEARCH_MODE=serp`).
-2. **Anakin URL Scraper** ([`services/anakinUrlScraper.js`](services/anakinUrlScraper.js)) — optional. Fetches full markdown for the top `DISCOVERY_ARTICLE_SCRAPE_MAX` non-Instagram URLs.
-3. **Groq JSON extraction** ([`services/groqExtractCreators.js`](services/groqExtractCreators.js)) — bundles snippets + scraped markdown into one prompt and asks Groq for a strict JSON list of creators (`handle`, `displayName`, `followerText`, `evidenceSnippet`, `sourceUrl`).
+2. **Anakin URL Scraper** ([`services/anakinUrlScraper.js`](services/anakinUrlScraper.js)) — optional. Fetches markdown for the top `DISCOVERY_ARTICLE_SCRAPE_MAX` non-Instagram URLs. When **`DISCOVERY_ANAKIN_GENERATE_JSON=true`** (default), scrapes also request **`generateJson`** so Anakin returns **`generatedJson`** (hosted structured extraction). [`groqExtractCreators.js`](services/groqExtractCreators.js) then prefers **`JSON.stringify(generatedJson.data)`** under `STRUCTURED_JSON` in the Groq prompt instead of dumping full markdown — fewer input tokens and fewer Groq TPM spikes. If JSON is missing or failed, content falls back to truncated markdown as before.
+3. **Groq JSON extraction** ([`services/groqExtractCreators.js`](services/groqExtractCreators.js)) — bundles snippets + per-source content into one prompt and asks Groq (default **`llama-3.1-8b-instant`**) for a strict JSON list of creators (`handle`, `displayName`, `followerText`, `evidenceSnippet`, `sourceUrl`).
 
-The response includes `stages.searchProvider` (`anakin-search`, `serp-fallback`, or `serp`) so you can see which path produced the results. If Groq fails or is disabled, the pipeline falls back to the legacy snippet-only mapper so the dashboard never shows zero rows when search returned data. See [`docs/anakin-api-overview.md`](docs/anakin-api-overview.md) for the full Anakin product comparison.
+The response includes `stages.searchProvider` (`anakin-search`, `serp-fallback`, or `serp`) and `stages.anakinGenerateJson` (whether article scrapes requested Anakin structured JSON). If Groq fails or is disabled, the pipeline falls back to the legacy snippet-only mapper so the dashboard never shows zero rows when search returned data. See [`docs/anakin-api-overview.md`](docs/anakin-api-overview.md) for the full Anakin product comparison.
 
 ### Manual smoke test
 

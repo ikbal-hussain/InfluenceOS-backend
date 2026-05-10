@@ -83,16 +83,27 @@ async function pollUntilComplete(jobId, { timeoutMs = POLL_TIMEOUT_MS } = {}) {
   throw err;
 }
 
+function hasGeneratedJsonPayload(generatedJson) {
+  if (!generatedJson || typeof generatedJson !== 'object') return false;
+  if (generatedJson.status === 'failed') return false;
+  if (generatedJson.status === 'success' && generatedJson.data != null) return true;
+  if (generatedJson.data != null && typeof generatedJson.data === 'object') return true;
+  return false;
+}
+
 async function scrapeMarkdown(url, options) {
   const jobId = await submitScrapeJob(url, options);
   if (!jobId) throw new Error('Anakin scraper did not return a jobId');
   const result = await pollUntilComplete(jobId);
   const markdown = result?.markdown || '';
+  const generatedJson =
+    result?.generatedJson != null ? result.generatedJson : result?.generated_json ?? null;
   return {
     url,
     jobId,
     status: result?.status || 'completed',
     markdown,
+    generatedJson,
     cached: Boolean(result?.cached),
     durationMs: result?.durationMs ?? null,
   };
@@ -120,12 +131,12 @@ async function withConcurrency(items, concurrency, worker) {
   return results;
 }
 
-async function scrapeArticles(urls, { concurrency = 3, useBrowser = false } = {}) {
+async function scrapeArticles(urls, { concurrency = 3, useBrowser = false, generateJson = false } = {}) {
   const articleUrls = urls.filter((url) => url && !isInstagramProfileUrl(url));
   if (articleUrls.length === 0) return [];
 
   const results = await withConcurrency(articleUrls, concurrency, (url) =>
-    scrapeMarkdown(url, { useBrowser, generateJson: false }),
+    scrapeMarkdown(url, { useBrowser, generateJson }),
   );
 
   return results
@@ -140,11 +151,15 @@ async function scrapeArticles(urls, { concurrency = 3, useBrowser = false } = {}
       }
       return res;
     })
-    .filter((r) => r.markdown && r.markdown.trim().length > 0);
+    .filter((r) => {
+      const md = Boolean(r.markdown && r.markdown.trim().length > 0);
+      return md || hasGeneratedJsonPayload(r.generatedJson);
+    });
 }
 
 module.exports = {
   scrapeArticles,
   scrapeMarkdown,
   isInstagramProfileUrl,
+  hasGeneratedJsonPayload,
 };
