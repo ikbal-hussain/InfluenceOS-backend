@@ -44,12 +44,59 @@ async function fetchInstagramProfileRaw(username) {
 function normalizeProfile(raw) {
   if (!raw || typeof raw !== 'object') return null;
 
-  const pic =
+  const profilePicUrlHd =
     raw.profilePicUrlHD ||
+    raw.profile_pic_url_hd ||
+    null;
+  const pic =
+    profilePicUrlHd ||
     raw.profilePicUrl ||
     raw.profilePictureUrl ||
     raw.profile_pic_url ||
     null;
+  const profilePicUrls = [
+    profilePicUrlHd,
+    raw.profilePicUrl,
+    raw.profilePictureUrl,
+    raw.profile_pic_url,
+  ].filter(Boolean);
+
+  const detailKeys = [
+    'id',
+    'url',
+    'inputUrl',
+    'accountType',
+    'businessCategoryName',
+    'categoryName',
+    'businessEmail',
+    'businessPhoneNumber',
+    'connectedFbPage',
+    'hasChannel',
+    'highlightReelCount',
+    'igtvVideoCount',
+    'joinedRecently',
+    'blockedByViewer',
+    'restrictedByViewer',
+    'countryBlock',
+    'externalUrlShimmed',
+  ];
+
+  const details = {};
+  for (const key of detailKeys) {
+    if (raw[key] != null && raw[key] !== '') details[key] = raw[key];
+  }
+
+  if (Array.isArray(raw.latestPosts)) {
+    details.latestPosts = raw.latestPosts.slice(0, 6).map((post) => ({
+      id: post.id ?? post.shortCode ?? null,
+      url: post.url ?? post.displayUrl ?? null,
+      caption: post.caption ?? null,
+      likesCount: post.likesCount ?? null,
+      commentsCount: post.commentsCount ?? null,
+      timestamp: post.timestamp ?? post.takenAtTimestamp ?? null,
+      type: post.type ?? post.productType ?? null,
+    }));
+  }
 
   return {
     username: raw.username ?? null,
@@ -78,6 +125,20 @@ function normalizeProfile(raw) {
     isBusiness: Boolean(raw.isBusinessAccount ?? raw.is_business),
     externalUrl: raw.externalUrl ?? raw.external_url ?? null,
     profilePicUrl: pic,
+    profilePicUrlHd,
+    profilePicUrls: [...new Set(profilePicUrls)],
+    url: raw.url ?? (raw.username ? `https://www.instagram.com/${raw.username}/` : null),
+    accountType: raw.accountType ?? null,
+    businessCategoryName: raw.businessCategoryName ?? null,
+    categoryName: raw.categoryName ?? null,
+    businessEmail: raw.businessEmail ?? null,
+    businessPhoneNumber: raw.businessPhoneNumber ?? null,
+    highlightReelCount:
+      typeof raw.highlightReelCount === 'number' ? raw.highlightReelCount : null,
+    igtvVideoCount:
+      typeof raw.igtvVideoCount === 'number' ? raw.igtvVideoCount : null,
+    joinedRecently: raw.joinedRecently ?? null,
+    details,
     fetchedAt: new Date().toISOString(),
   };
 }
