@@ -1,0 +1,31 @@
+{
+  "name": "influenceos-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo No tests configured"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ikbal-hussain/InfluenceOS-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ikbal-hussain/InfluenceOS-backend/issues"
+  },
+  "homepage": "https://github.com/ikbal-hussain/InfluenceOS-backend#readme",
+  "dependencies": {
+    "axios": "^1.16.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
