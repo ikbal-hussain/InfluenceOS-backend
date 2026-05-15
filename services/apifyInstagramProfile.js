@@ -17,7 +17,32 @@ function missCacheTtlMs() {
 }
 
 function getToken() {
-  return process.env.APIFY_API_TOKEN || '';
+  return (process.env.APIFY_API_TOKEN || '').trim();
+}
+
+function apifyTimeoutMs() {
+  const n = Number(process.env.ENRICHMENT_APIFY_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 120_000;
+}
+
+function withTimeout(promise, ms, code = 'APIFY_TIMEOUT') {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error('Apify request timed out');
+      err.code = code;
+      reject(err);
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function normalizeUsername(username) {
@@ -59,8 +84,15 @@ async function runApifyInstagramProfile(clean) {
   const client = new ApifyClient({ token });
   const input = { usernames: [clean] };
 
-  const run = await client.actor(ACTOR_ID).call(input);
-  const { items } = await client.dataset(run.defaultDatasetId).listItems();
+  const timeoutMs = apifyTimeoutMs();
+  const run = await withTimeout(
+    client.actor(ACTOR_ID).call(input),
+    timeoutMs,
+  );
+  const { items } = await withTimeout(
+    client.dataset(run.defaultDatasetId).listItems({ limit: 1 }),
+    timeoutMs,
+  );
 
   return items?.[0] ?? null;
 }
@@ -141,15 +173,18 @@ function normalizeProfile(raw) {
   }
 
   if (Array.isArray(raw.latestPosts)) {
-    details.latestPosts = raw.latestPosts.slice(0, 6).map((post) => ({
-      id: post.id ?? post.shortCode ?? null,
-      url: post.url ?? post.displayUrl ?? null,
-      caption: post.caption ?? null,
-      likesCount: post.likesCount ?? null,
-      commentsCount: post.commentsCount ?? null,
-      timestamp: post.timestamp ?? post.takenAtTimestamp ?? null,
-      type: post.type ?? post.productType ?? null,
-    }));
+    details.latestPosts = raw.latestPosts
+      .filter((post) => post && typeof post === 'object')
+      .slice(0, 6)
+      .map((post) => ({
+        id: post.id ?? post.shortCode ?? null,
+        url: post.url ?? post.displayUrl ?? null,
+        caption: post.caption ?? null,
+        likesCount: post.likesCount ?? null,
+        commentsCount: post.commentsCount ?? null,
+        timestamp: post.timestamp ?? post.takenAtTimestamp ?? null,
+        type: post.type ?? post.productType ?? null,
+      }));
   }
 
   return {

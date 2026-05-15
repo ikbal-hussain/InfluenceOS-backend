@@ -74,7 +74,9 @@ app.use(
     origin(origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      if (isLoopbackHttpOrigin(origin)) return callback(null, origin);
+      if (process.env.NODE_ENV !== 'production' && isLoopbackHttpOrigin(origin)) {
+        return callback(null, origin);
+      }
       callback(null, false);
     },
     credentials: true,

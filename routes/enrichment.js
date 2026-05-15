@@ -43,6 +43,8 @@ router.get('/instagram/profile-picture', async (req, res) => {
     const upstream = await axios.get(imageUrl, {
       responseType: 'stream',
       timeout: 15000,
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 300,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
@@ -51,8 +53,22 @@ router.get('/instagram/profile-picture', async (req, res) => {
       },
     });
 
-    res.setHeader('Content-Type', upstream.headers['content-type'] || 'image/jpeg');
+    const contentType = String(upstream.headers['content-type'] || '').split(';')[0].trim();
+    if (!contentType.startsWith('image/')) {
+      upstream.data.destroy?.();
+      return res.status(502).json({ error: 'Upstream response is not an image' });
+    }
+
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    upstream.data.on('error', (streamErr) => {
+      console.error('[enrichment/profile-picture] stream', streamErr.message);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Could not load profile image' });
+      } else {
+        res.end();
+      }
+    });
     upstream.data.pipe(res);
   } catch (err) {
     console.error('[enrichment/profile-picture]', err.message);
@@ -91,6 +107,12 @@ router.get('/instagram/:username', requireEnrichmentApiKey, async (req, res) => 
   } catch (err) {
     if (err.code === 'INVALID_USERNAME') {
       return res.status(400).json({ error: err.message, code: err.code });
+    }
+    if (err.code === 'APIFY_TIMEOUT') {
+      return res.status(504).json({
+        error: 'Live profile request timed out. Try again later.',
+        code: err.code,
+      });
     }
     if (err.code === 'APIFY_NOT_CONFIGURED') {
       return res.status(503).json({
