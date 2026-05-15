@@ -20,7 +20,7 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    Variables:
 
    - `PORT` — default `3000`.
-   - `CLIENT_ORIGIN` — optional comma-separated **extra** origins; merged with built-ins (Vite dev URLs `http://localhost:5173`, `http://127.0.0.1:5173`, and `https://influenceos-app.netlify.app`).
+   - `CLIENT_ORIGIN` — optional comma-separated **extra** origins; merged with built-ins (Netlify app URL, common Vite ports on localhost / 127.0.0.1, and **any `http://` origin whose host is loopback** — `localhost`, `127.0.0.1`, or `[::1]` — so `VITE_API_URL=http://localhost:3000` from the SPA does not hit CORS during local dev).
    - `ANAKIN_API_KEY` — required for `/api/v1/discovery/*` endpoints. Get one from the [Anakin dashboard](https://anakin.io/dashboard); keys start with `ak-`.
    - `ANAKIN_API_BASE_URL` — optional, defaults to `https://api.anakin.io/v1`.
    - `GROQ_API_KEY` — required for the discovery pipeline's JSON extraction stage. Get one from the [Groq console](https://console.groq.com/).

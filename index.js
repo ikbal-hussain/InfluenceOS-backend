@@ -11,8 +11,29 @@ const PORT = Number(process.env.PORT) || 3000;
 const DEFAULT_ORIGINS = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
   'https://influenceos-app.netlify.app',
 ];
+
+/** Any Vite/webpack port on loopback (incl. `[::1]`) when the SPA calls the API on :3000 */
+function isLoopbackHttpOrigin(origin) {
+  if (!origin) return false;
+  let url;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'http:') return false;
+  const { hostname } = url;
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname === '::1'
+  );
+}
 
 function allowedOriginsList() {
   const raw = process.env.CLIENT_ORIGIN;
@@ -30,6 +51,7 @@ app.use(
     origin(origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (isLoopbackHttpOrigin(origin)) return callback(null, origin);
       callback(null, false);
     },
     credentials: true,
