@@ -36,6 +36,10 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    - `DISCOVERY_GROQ_REQUIRED` — optional, default `true`. When `false`, the endpoint falls back to the legacy snippet-only mapper if Groq is missing or fails.
    - `APIFY_API_TOKEN` — optional. Enables `GET /api/v1/enrichment/instagram/:username` using the Apify actor [`apify/instagram-profile-scraper`](https://apify.com/apify/instagram-profile-scraper). Without it, the frontend detail page still works but shows discovery-only data (503 from enrichment).
    - `APIFY_RETURN_RAW` — optional. Set to `true` to include the raw Apify dataset item in enrichment responses (debug only).
+   - `ENRICHMENT_API_KEY` — optional in dev; **recommended in production**. When set, `GET /api/v1/enrichment/instagram/:username` requires `X-Enrichment-Key`, `X-Api-Key`, or `Authorization: Bearer`. Set the same value in the frontend as `VITE_ENRICHMENT_API_KEY` (visible in the bundle — use with rate limits, not as a true secret).
+   - `DISCOVERY_API_KEY` — optional. When set, `POST /api/v1/discovery/instagram` requires `X-Api-Key` or `Authorization: Bearer`.
+   - Rate limits (per IP, in-memory): `RATE_LIMIT_*` (global), `DISCOVERY_RATE_LIMIT_*`, `ENRICHMENT_RATE_LIMIT_*` — see `.env.example`.
+   - `ENRICHMENT_CACHE_TTL_SECONDS` — optional, default `300`. Caches successful Apify profile responses per username to avoid duplicate actor runs.
 
 ## Run
 
@@ -74,7 +78,7 @@ This calls `GET /v1/holocron/catalog` and a few `GET /v1/holocron/search` querie
 
 ### `GET /api/v1/enrichment/instagram/:username`
 
-Runs the Apify actor `apify/instagram-profile-scraper` for one username (no `@` prefix required). Returns `{ profile, source, actorId }` with normalized fields (`followersCount`, `profilePicUrl`, `biography`, etc.). Responds **503** with `APIFY_NOT_CONFIGURED` if `APIFY_API_TOKEN` is missing.
+Runs the Apify actor `apify/instagram-profile-scraper` for one username (no `@` prefix required). Returns `{ profile, source, actorId }` with normalized fields (`followersCount`, `profilePicUrl`, `biography`, etc.). Responds **503** with `APIFY_NOT_CONFIGURED` if `APIFY_API_TOKEN` is missing. When `ENRICHMENT_API_KEY` is set, requests without a valid key receive **401**. Per-IP rate limits and an in-memory username cache (see env vars) reduce abuse and duplicate Apify spend.
 
 ### `POST /api/v1/discovery/instagram`
 

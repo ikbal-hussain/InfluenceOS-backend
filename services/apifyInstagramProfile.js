@@ -3,29 +3,56 @@ const { ApifyClient } = require('apify-client');
 const ACTOR_ID = 'apify/instagram-profile-scraper';
 const USERNAME_RE = /^[A-Za-z0-9._]{1,30}$/;
 
+/** @type {Map<string, { raw: object|null, expiresAt: number }>} */
+const profileCache = new Map();
+
+function cacheTtlMs() {
+  const sec = Number(process.env.ENRICHMENT_CACHE_TTL_SECONDS);
+  return Number.isFinite(sec) && sec > 0 ? Math.floor(sec) * 1000 : 300_000;
+}
+
+function missCacheTtlMs() {
+  const sec = Number(process.env.ENRICHMENT_CACHE_MISS_TTL_SECONDS);
+  return Number.isFinite(sec) && sec > 0 ? Math.floor(sec) * 1000 : 60_000;
+}
+
 function getToken() {
   return process.env.APIFY_API_TOKEN || '';
 }
 
+function normalizeUsername(username) {
+  return String(username || '')
+    .replace(/^@/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function getCachedProfile(cacheKey) {
+  const hit = profileCache.get(cacheKey);
+  if (!hit) return undefined;
+  if (hit.expiresAt <= Date.now()) {
+    profileCache.delete(cacheKey);
+    return undefined;
+  }
+  return hit.raw;
+}
+
+function setCachedProfile(cacheKey, raw, ttlMs) {
+  profileCache.set(cacheKey, {
+    raw,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
 /**
- * Run Instagram Profile Scraper actor for one username.
+ * Run Instagram Profile Scraper actor for one username (uncached).
  * @returns {Promise<object|null>} First dataset item or null
  */
-async function fetchInstagramProfileRaw(username) {
+async function runApifyInstagramProfile(clean) {
   const token = getToken();
   if (!token) {
     const err = new Error('Apify API token is not configured');
     err.code = 'APIFY_NOT_CONFIGURED';
-    throw err;
-  }
-
-  const clean = String(username || '')
-    .replace(/^@/, '')
-    .trim();
-
-  if (!USERNAME_RE.test(clean)) {
-    const err = new Error('Invalid Instagram username');
-    err.code = 'INVALID_USERNAME';
     throw err;
   }
 
@@ -36,6 +63,33 @@ async function fetchInstagramProfileRaw(username) {
   const { items } = await client.dataset(run.defaultDatasetId).listItems();
 
   return items?.[0] ?? null;
+}
+
+/**
+ * Run Instagram Profile Scraper actor for one username.
+ * @returns {Promise<object|null>} First dataset item or null
+ */
+async function fetchInstagramProfileRaw(username) {
+  const clean = normalizeUsername(username);
+
+  if (!USERNAME_RE.test(clean)) {
+    const err = new Error('Invalid Instagram username');
+    err.code = 'INVALID_USERNAME';
+    throw err;
+  }
+
+  const cached = getCachedProfile(clean);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const raw = await runApifyInstagramProfile(clean);
+  setCachedProfile(clean, raw, raw ? cacheTtlMs() : missCacheTtlMs());
+  return raw;
+}
+
+function clearProfileCache() {
+  profileCache.clear();
 }
 
 /**
@@ -145,7 +199,10 @@ function normalizeProfile(raw) {
 
 module.exports = {
   fetchInstagramProfileRaw,
+  runApifyInstagramProfile,
   normalizeProfile,
+  normalizeUsername,
   getToken,
+  clearProfileCache,
   ACTOR_ID,
 };

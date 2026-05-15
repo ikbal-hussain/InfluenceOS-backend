@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const { requireApiKey } = require('../middleware/apiKeyAuth');
 const {
   fetchInstagramProfileRaw,
   normalizeProfile,
@@ -8,6 +9,11 @@ const {
 } = require('../services/apifyInstagramProfile');
 
 const router = express.Router();
+
+const requireEnrichmentApiKey = requireApiKey('ENRICHMENT_API_KEY', {
+  headerNames: ['x-enrichment-key', 'x-api-key'],
+  code: 'ENRICHMENT_UNAUTHORIZED',
+});
 
 const IMAGE_HOST_ALLOWLIST = [
   'cdninstagram.com',
@@ -54,7 +60,7 @@ router.get('/instagram/profile-picture', async (req, res) => {
   }
 });
 
-router.get('/instagram/:username', async (req, res) => {
+router.get('/instagram/:username', requireEnrichmentApiKey, async (req, res) => {
   const rawUsername = req.params.username;
 
   try {
@@ -75,6 +81,7 @@ router.get('/instagram/:username', async (req, res) => {
     }
 
     const profile = normalizeProfile(raw);
+    res.setHeader('Cache-Control', 'private, max-age=300');
     return res.json({
       source: 'apify',
       actorId: ACTOR_ID,

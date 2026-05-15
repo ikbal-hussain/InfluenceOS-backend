@@ -3,9 +3,32 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const discoveryRouter = require('./routes/discovery');
+const enrichmentRouter = require('./routes/enrichment');
+const { createRateLimiter } = require('./middleware/rateLimit');
+const { requireApiKey } = require('./middleware/apiKeyAuth');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
+
+const globalRateLimit = createRateLimiter({
+  windowMs: process.env.RATE_LIMIT_WINDOW_MS,
+  max: process.env.RATE_LIMIT_MAX,
+  keyPrefix: 'global',
+});
+
+const discoveryRateLimit = createRateLimiter({
+  windowMs: process.env.DISCOVERY_RATE_LIMIT_WINDOW_MS,
+  max: process.env.DISCOVERY_RATE_LIMIT_MAX,
+  keyPrefix: 'discovery',
+});
+
+const enrichmentRateLimit = createRateLimiter({
+  windowMs: process.env.ENRICHMENT_RATE_LIMIT_WINDOW_MS,
+  max: process.env.ENRICHMENT_RATE_LIMIT_MAX,
+  keyPrefix: 'enrichment',
+});
 
 /** Comma-separated extra origins in CLIENT_ORIGIN are merged with these defaults */
 const DEFAULT_ORIGINS = [
@@ -58,6 +81,7 @@ app.use(
   }),
 );
 app.use(express.json());
+app.use(globalRateLimit);
 
 app.get('/', (req, res) => {
   res.json({
@@ -74,9 +98,13 @@ app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
-app.use('/api/v1/discovery', discoveryRouter);
-const enrichmentRouter = require('./routes/enrichment');
-app.use('/api/v1/enrichment', enrichmentRouter);
+app.use(
+  '/api/v1/discovery',
+  discoveryRateLimit,
+  requireApiKey('DISCOVERY_API_KEY', { headerNames: ['x-api-key'], code: 'DISCOVERY_UNAUTHORIZED' }),
+  discoveryRouter,
+);
+app.use('/api/v1/enrichment', enrichmentRateLimit, enrichmentRouter);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
