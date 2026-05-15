@@ -20,7 +20,7 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    Variables:
 
    - `PORT` — default `3000`.
-   - `CLIENT_ORIGIN` — optional comma-separated **extra** origins; merged with built-ins (Vite dev URLs `http://localhost:5173`, `http://127.0.0.1:5173`, and `https://influenceos-app.netlify.app`).
+   - `CLIENT_ORIGIN` — optional comma-separated **extra** origins; merged with built-ins (Netlify app URL, common Vite ports on localhost / 127.0.0.1, and **any `http://` origin whose host is loopback** — `localhost`, `127.0.0.1`, or `[::1]` — so `VITE_API_URL=http://localhost:3000` from the SPA does not hit CORS during local dev).
    - `ANAKIN_API_KEY` — required for `/api/v1/discovery/*` endpoints. Get one from the [Anakin dashboard](https://anakin.io/dashboard); keys start with `ak-`.
    - `ANAKIN_API_BASE_URL` — optional, defaults to `https://api.anakin.io/v1`.
    - `GROQ_API_KEY` — required for the discovery pipeline's JSON extraction stage. Get one from the [Groq console](https://console.groq.com/).
@@ -34,6 +34,12 @@ This repository contains the Node.js + Express API that powers the InfluenceOS f
    - `DISCOVERY_ANAKIN_GENERATE_JSON` — optional, default `true`. When `true`, article scrapes pass `generateJson: true` to Anakin URL Scraper so each job can return `generatedJson` (structured extraction on Anakin). Groq prompts prefer compact `STRUCTURED_JSON` over full markdown to reduce tokens per minute (TPM). Set `false` for markdown-only scrapes (previous behavior, lower Anakin extraction cost/latency).
    - `DISCOVERY_PROFILE_SCRAPE_MAX` — optional, default `0`. Top-N Instagram profiles to enrich via URL Scraper. Off by default because Instagram blocks anonymous scrapers.
    - `DISCOVERY_GROQ_REQUIRED` — optional, default `true`. When `false`, the endpoint falls back to the legacy snippet-only mapper if Groq is missing or fails.
+   - `APIFY_API_TOKEN` — optional. Enables `GET /api/v1/enrichment/instagram/:username` using the Apify actor [`apify/instagram-profile-scraper`](https://apify.com/apify/instagram-profile-scraper). Without it, the frontend detail page still works but shows discovery-only data (503 from enrichment).
+   - `APIFY_RETURN_RAW` — optional. Set to `true` to include the raw Apify dataset item in enrichment responses (debug only).
+   - `ENRICHMENT_API_KEY` — optional in dev; **recommended in production**. When set, `GET /api/v1/enrichment/instagram/:username` requires `X-Enrichment-Key`, `X-Api-Key`, or `Authorization: Bearer`. Set the same value in the frontend as `VITE_ENRICHMENT_API_KEY` (visible in the bundle — use with rate limits, not as a true secret).
+   - `DISCOVERY_API_KEY` — optional. When set, `POST /api/v1/discovery/instagram` requires `X-Api-Key` or `Authorization: Bearer`.
+   - Rate limits (per IP, in-memory): `RATE_LIMIT_*` (global), `DISCOVERY_RATE_LIMIT_*`, `ENRICHMENT_RATE_LIMIT_*` — see `.env.example`.
+   - `ENRICHMENT_CACHE_TTL_SECONDS` — optional, default `300`. Caches successful Apify profile responses per username to avoid duplicate actor runs.
 
 ## Run
 
@@ -68,6 +74,11 @@ This calls `GET /v1/holocron/catalog` and a few `GET /v1/holocron/search` querie
 | GET    | `/`                               | API info                                            |
 | GET    | `/health`                         | Health check                                        |
 | POST   | `/api/v1/discovery/instagram`     | Discover Instagram creators via Anakin Search API   |
+| GET    | `/api/v1/enrichment/instagram/:username` | Live profile via Apify (`APIFY_API_TOKEN` required) |
+
+### `GET /api/v1/enrichment/instagram/:username`
+
+Runs the Apify actor `apify/instagram-profile-scraper` for one username (no `@` prefix required). Returns `{ profile, source, actorId }` with normalized fields (`followersCount`, `profilePicUrl`, `biography`, etc.). Responds **503** with `APIFY_NOT_CONFIGURED` if `APIFY_API_TOKEN` is missing. When `ENRICHMENT_API_KEY` is set, requests without a valid key receive **401**. Per-IP rate limits and an in-memory username cache (see env vars) reduce abuse and duplicate Apify spend.
 
 ### `POST /api/v1/discovery/instagram`
 
